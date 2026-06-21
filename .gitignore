@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Virtualenv
+venv/
+.venv/
+env/
+
+# Env / secretos (¡nunca commitear el token!)
+.env
+.env.*
+!.env.example
+
+# Sistema
+.DS_Store
+*.log
+
+# Herramientas
+.claude/
+
+# Nota: data/state.json SÍ se versiona — es el estado persistido entre corridas del cron.

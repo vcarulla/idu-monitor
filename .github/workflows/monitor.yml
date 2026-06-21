@@ -1,0 +1,45 @@
+name: monitor/idu
+
+on:
+  schedule:
+    # Una vez por día a las 13:00 UTC (~10:00 ART). El cron de GitHub es best-effort.
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run IDU monitor
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          MY_IDU: ${{ vars.MY_IDU }}
+          STATE_DIR: data
+          PYTHONPATH: src
+        run: python -m idu_monitor
+
+      - name: Heartbeat
+        # Marca de última corrida: deja rastro de liveness y ayuda a mantener el repo activo.
+        run: date -u +"%Y-%m-%dT%H:%M:%SZ" > data/last_run.txt
+
+      - name: Commit state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/state.json data/last_run.txt
+          git diff --cached --quiet || git commit -m "chore: actualiza estado IDU [skip ci]"
+          git push
