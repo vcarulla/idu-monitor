@@ -48,10 +48,11 @@ def extract_idu_numbers(idu_string):
     raise ValueError(f"No se pudo parsear el IDU: {idu_string}")
 
 
-def parse_html(html):
-    """Extrae el rango de IDU habilitado y el mes a partir del HTML de la página.
+def parse_ranges(html):
+    """Extrae TODOS los rangos de IDU de la tabla (la web apila los meses, no los borra).
 
     Separado de la descarga para poder testearlo con HTML de fixture.
+    Devuelve una lista de dicts {desde, hasta, mes} en el orden en que aparecen.
     """
     soup = BeautifulSoup(html, "html.parser")
 
@@ -64,6 +65,7 @@ def parse_html(html):
     if not table:
         raise ValueError("No se encontró la tabla de habilitaciones")
 
+    ranges = []
     for row in table.find_all("tr"):
         cells = row.find_all("td")
         if not cells:
@@ -83,14 +85,29 @@ def parse_html(html):
         if mes_match:
             mes = f"{mes_match.group(1).replace(' ', '')} {mes_match.group(2)}"
 
-        return {
-            "desde": desde,
-            "hasta": hasta,
-            "mes": mes,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
+        ranges.append({"desde": desde, "hasta": hasta, "mes": mes})
 
-    raise ValueError("No se encontró el rango de IDU en la tabla")
+    if not ranges:
+        raise ValueError("No se encontró el rango de IDU en la tabla")
+    return ranges
+
+
+def select_current(ranges):
+    """Devuelve el rango más avanzado: el de mayor 'hasta'.
+
+    La web lista meses ya pasados además de los próximos, así que la primera fila puede
+    estar atrasada. El 'hasta' más alto es hasta dónde llegó realmente la cola.
+    """
+    return max(ranges, key=lambda r: extract_idu_numbers(r["hasta"]))
+
+
+def parse_html(html):
+    """Devuelve el rango más avanzado con timestamp, más la lista completa de rangos."""
+    ranges = parse_ranges(html)
+    current = dict(select_current(ranges))
+    current["timestamp"] = datetime.now(UTC).isoformat()
+    current["ranges"] = ranges
+    return current
 
 
 def scrape_website():
@@ -103,18 +120,18 @@ def scrape_website():
     return parse_html(response.content)
 
 
-def determine_status(my_idu, desde, hasta):
-    """Determina el estado según qué tan cerca esté el rango habilitado del IDU."""
+def determine_status(my_idu, ranges):
+    """Determina el estado evaluando el IDU contra TODOS los rangos publicados."""
     my_num = extract_idu_numbers(my_idu)
-    desde_num = extract_idu_numbers(desde)
-    hasta_num = extract_idu_numbers(hasta)
 
-    if desde_num <= my_num <= hasta_num:
-        return "AL FIN NOS TOCA A NOSOTROS!!!!"
-    elif hasta_num >= 90000:
+    for r in ranges:
+        if extract_idu_numbers(r["desde"]) <= my_num <= extract_idu_numbers(r["hasta"]):
+            return "AL FIN NOS TOCA A NOSOTROS!!!!"
+
+    max_hasta = max(extract_idu_numbers(r["hasta"]) for r in ranges)
+    if max_hasta >= 90000:
         return "YA FALTA POCO!!"
-    else:
-        return "Hay que esperar..."
+    return "Hay que esperar..."
 
 
 def load_state():
@@ -164,7 +181,7 @@ def main():
 
     previous_data = load_state()
 
-    status = determine_status(MY_IDU, current_data["desde"], current_data["hasta"])
+    status = determine_status(MY_IDU, current_data["ranges"])
     current_data["status"] = status
     print(f"📊 Tu IDU ({MY_IDU}): {status}")
 
@@ -184,7 +201,7 @@ def main():
     message = f"""
 <b>🚨 ACTUALIZACIÓN IDU - Ley de Memoria Democrática</b>
 
-<b>Rango habilitado para {current_data['mes']}:</b>
+<b>Próxima habilitación – {current_data['mes']}:</b>
 Desde: {current_data['desde']}
 Hasta: {current_data['hasta']}
 
