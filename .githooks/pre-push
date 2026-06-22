@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Corre lint + tests antes de cada push. Si algo falla, el push se aborta.
+# Activar (una vez por clon):  git config core.hooksPath .githooks
+set -e
+
+echo "▶ pre-push: ruff + pytest"
+
+if [ -x venv/bin/ruff ]; then
+    RUFF=venv/bin/ruff
+    PYTEST=venv/bin/pytest
+else
+    RUFF=ruff
+    PYTEST=pytest
+fi
+
+"$RUFF" check .
+"$PYTEST" -q
+
+echo "✅ pre-push OK"

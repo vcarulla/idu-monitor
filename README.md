@@ -1,5 +1,9 @@
 # idu-monitor
 
+[![CI](https://github.com/vcarulla/idu-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/vcarulla/idu-monitor/actions/workflows/ci.yml)
+[![monitor](https://github.com/vcarulla/idu-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/vcarulla/idu-monitor/actions/workflows/monitor.yml)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
+
 Monitor de habilitaciones de IDU (Ley de Memoria Democrática) del Consulado de España
 en Buenos Aires. Scrapea la web oficial una vez por día y, cuando el rango habilitado
 cambia, avisa por Telegram.
@@ -28,6 +32,15 @@ Tests y lint:
 ```bash
 pytest
 ruff check .
+```
+
+### Hook de pre-push
+
+El repo trae un hook que corre `ruff` + `pytest` antes de cada push y lo aborta si algo
+falla. Activalo una vez por clon:
+
+```bash
+git config core.hooksPath .githooks
 ```
 
 ## Configuración
