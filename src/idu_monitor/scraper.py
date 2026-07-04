@@ -5,6 +5,7 @@ import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 from bs4 import BeautifulSoup
@@ -18,9 +19,15 @@ except ImportError:
     pass
 
 # --- Configuración (todo por entorno; nada de secretos hardcodeados) ---
+DEFAULT_IDU = "NW-2024-110693"
+# A partir de este 'hasta' el aviso pasa de "hay que esperar" a "ya falta poco".
+CLOSE_THRESHOLD = 90000
+# El runner corre en UTC; sellamos el mensaje en hora de Argentina para que se lea bien.
+AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
-MY_IDU = os.environ.get("MY_IDU", "NW-2024-110693")
+MY_IDU = os.environ.get("MY_IDU", DEFAULT_IDU)
 STATE_DIR = Path(os.environ.get("STATE_DIR", "data"))
 STATE_FILE = STATE_DIR / "state.json"
 URL = os.environ.get(
@@ -83,7 +90,11 @@ def parse_ranges(html):
             r"([A-Za-záéíóúñÁÉÍÓÚÑ][A-Za-záéíóúñÁÉÍÓÚÑ ]*?)\s*(\d{4})", mes_text
         )
         if mes_match:
-            mes = f"{mes_match.group(1).replace(' ', '')} {mes_match.group(2)}"
+            # El CMS a veces antepone el artículo "de" ("de julio") y otras parte la
+            # palabra ("M ayo"): quitamos el artículo, pegamos los fragmentos y normalizamos.
+            nombre = re.sub(r"^de\s+", "", mes_match.group(1), flags=re.IGNORECASE)
+            nombre = nombre.replace(" ", "").capitalize()
+            mes = f"{nombre} {mes_match.group(2)}"
 
         ranges.append({"desde": desde, "hasta": hasta, "mes": mes})
 
@@ -129,7 +140,7 @@ def determine_status(my_idu, ranges):
             return "AL FIN NOS TOCA A NOSOTROS!!!!"
 
     max_hasta = max(extract_idu_numbers(r["hasta"]) for r in ranges)
-    if max_hasta >= 90000:
+    if max_hasta >= CLOSE_THRESHOLD:
         return "YA FALTA POCO!!"
     return "Hay que esperar..."
 
@@ -170,6 +181,26 @@ def send_telegram_message(message):
         return False
 
 
+def build_message(data, my_idu, status, now=None):
+    """Arma el aviso de Telegram (HTML). Separado de main() para poder testearlo.
+
+    `now` es inyectable para tests; por defecto usa la hora de Argentina.
+    """
+    now = now or datetime.now(AR_TZ)
+    return f"""
+<b>🚨 ACTUALIZACIÓN IDU - Ley de Memoria Democrática</b>
+
+<b>Próxima habilitación – {data['mes']}:</b>
+Desde: {data['desde']}
+Hasta: {data['hasta']}
+
+<b>Tu IDU ({my_idu}):</b>
+<b>{status}</b>
+
+<i>Última actualización: {now.strftime('%d/%m/%Y %H:%M')} (ART)</i>
+""".strip()
+
+
 def main():
     print(f"🔍 Scrappeando {URL}...")
 
@@ -190,26 +221,15 @@ def main():
         save_state(current_data)
         return
 
-    if previous_data["hasta"] == current_data["hasta"]:
+    if previous_data.get("hasta") == current_data["hasta"]:
         print("⏭️  No hay cambios desde la última verificación. No se envía mensaje.")
         return
 
     print("🔄 ¡CAMBIO DETECTADO!")
-    print(f"   Antes: hasta {previous_data['hasta']}")
+    print(f"   Antes: hasta {previous_data.get('hasta')}")
     print(f"   Ahora: hasta {current_data['hasta']}")
 
-    message = f"""
-<b>🚨 ACTUALIZACIÓN IDU - Ley de Memoria Democrática</b>
-
-<b>Próxima habilitación – {current_data['mes']}:</b>
-Desde: {current_data['desde']}
-Hasta: {current_data['hasta']}
-
-<b>Tu IDU ({MY_IDU}):</b>
-<b>{status}</b>
-
-<i>Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M')}</i>
-""".strip()
+    message = build_message(current_data, MY_IDU, status)
 
     if send_telegram_message(message):
         save_state(current_data)

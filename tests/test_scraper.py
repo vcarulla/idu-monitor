@@ -4,11 +4,13 @@ El parser se testea contra un HTML de fixture que replica el formato "sucio"
 del CMS del consulado (zero-width spaces y palabras partidas), para que un
 futuro rediseño de la web rompa el test antes que la producción.
 """
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from idu_monitor.scraper import (
+    build_message,
     determine_status,
     extract_idu_numbers,
     parse_html,
@@ -48,6 +50,24 @@ def test_parse_html_reporta_el_rango_mas_avanzado(html):
     assert data["mes"] == "Julio 2026"
     assert "timestamp" in data
     assert len(data["ranges"]) == 2
+
+
+def test_parse_ranges_normaliza_mes_con_articulo_de(html):
+    # El fixture trae "de julio 2026" (como sirve la web real); debe salir "Julio 2026".
+    ranges = parse_ranges(html)
+    assert ranges[1]["mes"] == "Julio 2026"
+
+
+def test_build_message_incluye_rango_status_y_hora():
+    data = {"mes": "Julio 2026", "desde": "NW-2024-067241", "hasta": "NW-2024-080072"}
+    msg = build_message(
+        data, "NW-2024-110693", "Hay que esperar...", now=datetime(2026, 7, 4, 10, 30)
+    )
+    assert "Julio 2026" in msg
+    assert "NW-2024-080072" in msg
+    assert "NW-2024-110693" in msg
+    assert "Hay que esperar..." in msg
+    assert "04/07/2026 10:30 (ART)" in msg
 
 
 def test_parse_ranges_sin_tabla_falla():
